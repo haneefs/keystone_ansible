@@ -47,13 +47,13 @@ def test_process(module):
 
 
 def get_login_cred(module):
-    
+
     module.params["login_username"] = "admin1"
     module.params["login_project_name"] = "admin"
     module.params["login_user_domain_name"] = "Default"
     module.params["login_project_domain_name"] = "Default"
     module.params["login_password"] = "password"
-    module.params["auth_url"] = "http://localhost:35357/v3"
+    module.params["endpoint"] = "http://localhost:35357/v3"
 
 
 def get_token_cred(module):
@@ -206,10 +206,36 @@ def test_grant_revoke_domain_role(module):
     test_delete_role(module)
 
 
+def test_create_service(module):
+
+    module.params["action"] = "create_service"
+    module.params["service_name"] = "TestService"
+
+    module.params["service_type"] = "TestServiceType"
+    module.params["description"] = "TestServiceDescription"
+    
+
+    test_process(module)
+
+
+def test_create_endpoint(module):
+
+    module.params["action"] = "create_endpoint"
+    module.params["service_name"] = "TestService"
+
+    module.params["region"] = "regiona_a"
+    module.params["internal_url"] = "http://internalurl/"
+    module.params["admin_url"] = "http://internalurl/"
+    module.params["public_url"] = "http://internalurl/"
+    
+
+    test_process(module)
+
+
 if __name__ == '__main__':
 
     try:
-
+        '''
         module = TestModule()
         get_login_cred(module)
         test_find_domain(module)
@@ -265,6 +291,15 @@ if __name__ == '__main__':
         module = TestModule()
         get_login_cred(module)
         test_grant_revoke_domain_role(module)
+        
+        module = TestModule()
+        get_login_cred(module)
+        test_create_service(module)
+        
+        '''
+        module = TestModule()
+        get_login_cred(module)
+        test_create_endpoint(module)
 
     except Exception as e:
         print e

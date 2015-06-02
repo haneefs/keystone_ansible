@@ -1,8 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from duplicity.commandline import verify
 from __builtin__ import False
-
 
 DOCUMENTATION = '''
 ---
@@ -16,20 +14,28 @@ author: Haneef Ali
 '''
 
 EXAMPLES = '''
-# Create a tenant
-- keystone_user: tenant=demo tenant_description="Default Tenant"
+# Create a project
+- keystone_v3: action="create_project" project_name=demo
+               description="Default Tenant" project_domain_name="Default"
 
 # Create a user
-- keystone_user: user=john tenant=demo password=secrete
+- keystone_v3: action="create_user" user_name=demo
+               description="Default User" user_domain_name="Default"
 
-# Apply the admin role to the john user in the demo tenant
-- keystone: role=admin user=john tenant=demo
+# Create a domain
+- keystone_v3: action="create_domain" domain_name=demo
+               description="Default User"
+
+# Grant  admin role to the john user in the demo tenant
+- keystone_v3: action="grant_project_role" project__name=demo
+               role_name=admin user_name=john user_domain_name=Default
+               project_domain_name=Default
 '''
 
 
 from keystoneclient.v3 import client as v3client
 from keystoneclient.auth.identity import v3
-from keystoneclient.auth import  token_endpoint
+from keystoneclient.auth import token_endpoint
 from keystoneclient import session
 
 
@@ -50,7 +56,7 @@ def _get_client(auth_url=None, token=None, login_username=None, login_password=N
     if ca_cert:
         insecure = False
     auth_session = session.Session(
-        auth=auth_plugin, verify=verify, cert=ca_cert)
+        auth=auth_plugin, verify=insecure, cert=ca_cert)
     return v3client.Client(auth_url=auth_url, session=auth_session)
 
 
@@ -135,6 +141,28 @@ def _grant_roles(ks_client, role=None, project=None, user=None, domain=None):
 def _revoke_roles(ks_client, role=None, project=None, user=None, domain=None):
     return ks_client.roles.revoke(role=role, project=project, user=user, domain=domain)
 
+def _find_service(ks_client, service_name=None, service_type=None):
+    services  =  ks_client.services.list(name=service_name,
+                                  type=service_type)
+    return services[0] if len(services) else None
+
+def _create_service(ks_client, service_name=None, service_type=None,
+                    description=None):
+    return ks_client.services.create(name=service_name, type=service_type,
+                                     description=description)
+
+def _delete_service(ks_client, service_name=None):
+    return ks_client.services.delete(name=service_name)
+
+def _find_endpoint(ks_client, service=None, interface=None):
+    
+    endpoints =  ks_client.endpoints.list(service=service, interface=interface)
+    return endpoints[0] if len(endpoints) else None
+
+def _create_endpoint(ks_client, service=None, url=None,
+                    interface=None, region=None):
+    return ks_client.endpoints.create(service=service, url=url,
+                                     interface=interface, region=region)
 
 def find_domain(ks_client, domain_name=None):
     domain = _find_domain(ks_client, domain_name=domain_name)
@@ -181,7 +209,7 @@ def create_user(ks_client, user_name=None, user_password=None, domain_name=None,
     if user:
         return (False,  user)
 
-    # Domain with that name doesn't exist
+    # User with that name doesn't exist
     user = _create_user(ks_client, user_name=user_name,
                         user_password=user_password, domain_name=domain_name,
                         email=email, description=description)
@@ -196,7 +224,7 @@ def delete_user(ks_client, user_name=None, domain_name=None):
         _delete_user(ks_client, user=user)
         return (True, user)
 
-     # Domain with that name doesn't exist
+     # User with that name doesn't exist
     return (False, None)
 
 
@@ -216,7 +244,7 @@ def create_project(ks_client, project_name=None, domain_name=None,
     if project:
         return (False,  project)
 
-    # Domain with that name doesn't exist
+    # Project with that name doesn't exist
     project = _create_project(ks_client, project_name=project_name,
                               domain_name=domain_name, description=description)
     return (True, project)
@@ -231,7 +259,7 @@ def delete_project(ks_client, project_name=None, domain_name=None):
         _delete_project(ks_client, project=project)
         return (True, project)
 
-     # Domain with that name doesn't exist
+     # Project with that name doesn't exist
     return (False, None)
 
 
@@ -333,6 +361,46 @@ def revoke_domain_role(ks_client, role_name=None, user_name=None, domain_name=No
                                         user_domain_name=user_domain_name,
                                         domain_name=domain_name, grant=False)
 
+def create_service(ks_client, service_name=None, service_type=None,
+                   description=None):
+    
+    service = _find_service(ks_client, service_name=service_name,
+                            service_type=service_type)
+
+    if service:
+        return (False,  service)
+
+    # Service with that name doesn't exist
+    service = _create_service(
+        ks_client, service_name=service_name, service_type=service_type,
+        description=description)
+    return (True, service)
+
+def create_endpoint(ks_client, service_name=None, region=None,
+                   admin_url=None, internal_url=None,
+                   public_url=None):
+    
+    service = _find_service(ks_client, service_name=service_name)
+
+    if not service:
+        raise Exception("Service with the name=%s doesn't exist" %(service_name))
+
+    # Here we are checking only public endpoint, that should be fine
+    endpoint = _find_endpoint(ks_client, service=service, interface="public")
+    if endpoint:
+        return (False, endpoint)
+    
+    public_endpoint = _create_endpoint(
+        ks_client, service=service, interface="public", region=region,
+        url=public_url)
+    internal_endpoint = _create_endpoint(
+        ks_client, service=service, interface="internal", region=region,
+        url=internal_url)
+    public_endpint = _create_endpoint(
+        ks_client, service=service, interface="admin", region=region,
+        url=admin_url)
+    
+    return (True, public_endpint)
 
 def process_params(module):
 
@@ -348,7 +416,13 @@ def process_params(module):
     project_domain_name = module.params.get("project_domain_name", None)
 
     role_name = module.params.get("role_name", None)
-    state = module.params.get("state", "present")
+
+    service_name = module.params.get("service_name", None)
+    service_type = module.params.get("service_type", None)
+    region = module.params.get("region", None)
+    admin_url = module.params.get("admin_url", None)
+    internal_url = module.params.get("internal_url", None)
+    public_url = module.params.get("public_url", None)
 
     action = module.params["action"]
 
@@ -379,6 +453,13 @@ def process_params(module):
         kwargs = dict(role_name=role_name, user_name=user_name,
                       user_domain_name=user_domain_name,
                       domain_name=domain_name)
+    elif (action == "create_service"):
+        kwargs = dict(service_name=service_name, service_type=service_type,
+                      description=description)    
+    elif (action == "create_endpoint"):
+        kwargs = dict(service_name=service_name, region=region,
+                      admin_url=admin_url, internal_url=internal_url,
+                      public_url=public_url)
 
     return kwargs
 
@@ -402,7 +483,10 @@ dispatch_map = {
     "grant_project_role": grant_project_role,
     "revoke_project_role": revoke_project_role,
     "grant_domain_role": grant_domain_role,
-    "revoke_domain_role": revoke_domain_role
+    "revoke_domain_role": revoke_domain_role,
+
+    "create_service": create_service,
+    "create_endpoint": create_endpoint,
 
 }
 
@@ -414,8 +498,8 @@ def get_client(module):
     login_user_domain_name = module.params.get("login_user_domain_name")
     login_project_domain_name = module.params.get("login_project_domain_name")
     login_password = module.params.get("login_password")
-    auth_url = module.params.get("auth_url")
-    token = module.params.get("token")
+    auth_url = module.params.get("endpoint")
+    token = module.params.get("login_token")
 
     ks_client = _get_client(login_username=login_username,
                             login_project_name=login_project_name,
@@ -458,13 +542,24 @@ def main():
         login_domain_name=dict(default=None),
         login_token=dict(default=None),
 
+        endpoint=dict(default=None),
+        description=dict(default="Created by Ansible keystone_v3"),
+        email=dict(default=None),
         user_name=dict(default=None),
+        user_password=dict(default=None),
         user_domain_name=dict(default=None),
         project_name=dict(default=None),
         project_domain_name=dict(default=None),
         domain_name=dict(default=None),
         role_name=dict(default=None),
 
+        service_name=dict(default=None),
+        service_type=dict(default=None),
+
+        region=dict(default=None),
+        admin_url=dict(default=None),
+        public_url=dict(default=None),
+        internal_url=dict(default=None),
 
         action=dict(default=None, required=True, choices=supported_actions)
 
