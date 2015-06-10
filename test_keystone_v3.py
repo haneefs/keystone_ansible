@@ -235,7 +235,7 @@ def test_create_endpoint(module):
 if __name__ == '__main__':
 
     try:
-        '''
+        
         module = TestModule()
         get_login_cred(module)
         test_find_domain(module)
@@ -296,7 +296,7 @@ if __name__ == '__main__':
         get_login_cred(module)
         test_create_service(module)
         
-        '''
+        
         module = TestModule()
         get_login_cred(module)
         test_create_endpoint(module)

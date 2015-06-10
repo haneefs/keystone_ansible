@@ -8,7 +8,10 @@ module: keystone_v3
 version_added: "1.0"
 short_description: Manage OpenStack Identity (keystone v3) users, tenants and roles
 description:
-   - Manage users,tenants, roles from OpenStack.
+   - Manage users,tenants, endpoints, services roles from OpenStack.
+   - Authentication should be added to each call with 
+      token/domain scope token cred/project scope token credentials
+     Examples below uses token, instead you can also specify login credentials
 requirements: [ python-keystoneclient ]
 author: Haneef Ali
 '''
@@ -17,19 +20,45 @@ EXAMPLES = '''
 # Create a project
 - keystone_v3: action="create_project" project_name=demo
                description="Default Tenant" project_domain_name="Default"
+               login_token=Mytoken endpoint=http://keystone:353537/v3
 
 # Create a user
 - keystone_v3: action="create_user" user_name=demo
                description="Default User" user_domain_name="Default"
+               login_token=Mytoken endpoint=http://keystone:353537/v3
 
 # Create a domain
 - keystone_v3: action="create_domain" domain_name=demo
                description="Default User"
+               login_token=Mytoken endpoint=http://keystone:353537/v3
+               
+# Create a role
+- keystone_v3: action="create_domain" domain_name=demo
+               description="Default User"
+               login_token=Mytoken endpoint=http://keystone:353537/v3
 
 # Grant  admin role to the john user in the demo tenant
 - keystone_v3: action="grant_project_role" project__name=demo
                role_name=admin user_name=john user_domain_name=Default
                project_domain_name=Default
+               login_token=Mytoken endpoint=http://keystone:353537/v3
+               
+# Grant  admin role to the john user in the domain John_Domain 
+- keystone_v3: action="grant_domain_role" domain__name=John-Domain
+               role_name=admin user_name=john user_domain_name=Default
+               login_token=Mytoken endpoint=http://keystone:353537/v3
+
+# Create a service 
+- keystone_v3: action="create_service" service_name=Keystone
+               service_type=identity description=Identity
+               login_token=Mytoken endpoint=http://keystone:353537/v3
+               
+# Create a endpoint
+- keystone_v3: action="create_endpoint" service_name=Keystone
+               region=myregion public_endpoint=http://public_ep
+               internal_endpoint=http://internal_ep private_endpoint=http://private_ep
+               login_token=Mytoken endpoint=http://keystone:353537/v3               
+
 '''
 
 
