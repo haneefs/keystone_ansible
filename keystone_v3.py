@@ -9,7 +9,7 @@ version_added: "1.0"
 short_description: Manage OpenStack Identity (keystone v3) users, tenants and roles
 description:
    - Manage users,tenants, endpoints, services roles from OpenStack.
-   - Authentication should be added to each call with 
+   - Authentication should be added to each call with
       token/domain scope token cred/project scope token credentials
      Examples below uses token, instead you can also specify login credentials
 requirements: [ python-keystoneclient ]
@@ -17,6 +17,20 @@ author: Haneef Ali
 '''
 
 EXAMPLES = '''
+
+# Create a project using ssl endpoint and insecure mode
+- keystone_v3: action="create_project" project_name=demo
+               description="Default Tenant" project_domain_name="Default"
+               login_token=Mytoken endpoint=https://keystone:353537/v3
+               insecure=True
+
+# Create a project using ssl endpoint passing proper certs
+# /tmp/mycacert.crt should exist in target node
+- keystone_v3: action="create_project" project_name=demo
+               description="Default Tenant" project_domain_name="Default"
+               login_token=Mytoken endpoint=https://keystone:353537/v3
+               cacerts="/tmp/mycacert.crt"
+
 # Create a project
 - keystone_v3: action="create_project" project_name=demo
                description="Default Tenant" project_domain_name="Default"
@@ -31,7 +45,7 @@ EXAMPLES = '''
 - keystone_v3: action="create_domain" domain_name=demo
                description="Default User"
                login_token=Mytoken endpoint=http://keystone:353537/v3
-               
+
 # Create a role
 - keystone_v3: action="create_domain" domain_name=demo
                description="Default User"
@@ -42,22 +56,22 @@ EXAMPLES = '''
                role_name=admin user_name=john user_domain_name=Default
                project_domain_name=Default
                login_token=Mytoken endpoint=http://keystone:353537/v3
-               
-# Grant  admin role to the john user in the domain John_Domain 
+
+# Grant  admin role to the john user in the domain John_Domain
 - keystone_v3: action="grant_domain_role" domain__name=John-Domain
                role_name=admin user_name=john user_domain_name=Default
                login_token=Mytoken endpoint=http://keystone:353537/v3
 
-# Create a service 
+# Create a service
 - keystone_v3: action="create_service" service_name=Keystone
                service_type=identity description=Identity
                login_token=Mytoken endpoint=http://keystone:353537/v3
-               
+
 # Create a endpoint
 - keystone_v3: action="create_endpoint" service_name=Keystone
                region=myregion public_endpoint=http://public_ep
                internal_endpoint=http://internal_ep private_endpoint=http://private_ep
-               login_token=Mytoken endpoint=http://keystone:353537/v3               
+               login_token=Mytoken endpoint=http://keystone:353537/v3
 
 '''
 
@@ -82,10 +96,10 @@ def _get_client(auth_url=None, token=None, login_username=None, login_password=N
                                   user_domain_name=login_user_domain_name, domain_name=login_domain_name)
 
     # Force validation if ca_cert is provided
-    if ca_cert:
-        insecure = False
+    verify = True if ca_cert  else not insecure
+
     auth_session = session.Session(
-        auth=auth_plugin, verify=insecure, cert=ca_cert)
+        auth=auth_plugin, verify=verify, cert=ca_cert)
     return v3client.Client(auth_url=auth_url, session=auth_session)
 
 
@@ -184,7 +198,7 @@ def _delete_service(ks_client, service_name=None):
     return ks_client.services.delete(name=service_name)
 
 def _find_endpoint(ks_client, service=None, interface=None):
-    
+
     endpoints =  ks_client.endpoints.list(service=service, interface=interface)
     return endpoints[0] if len(endpoints) else None
 
@@ -392,7 +406,7 @@ def revoke_domain_role(ks_client, role_name=None, user_name=None, domain_name=No
 
 def create_service(ks_client, service_name=None, service_type=None,
                    description=None):
-    
+
     service = _find_service(ks_client, service_name=service_name,
                             service_type=service_type)
 
@@ -408,7 +422,7 @@ def create_service(ks_client, service_name=None, service_type=None,
 def create_endpoint(ks_client, service_name=None, region=None,
                    admin_url=None, internal_url=None,
                    public_url=None):
-    
+
     service = _find_service(ks_client, service_name=service_name)
 
     if not service:
@@ -418,7 +432,7 @@ def create_endpoint(ks_client, service_name=None, region=None,
     endpoint = _find_endpoint(ks_client, service=service, interface="public")
     if endpoint:
         return (False, endpoint)
-    
+
     public_endpoint = _create_endpoint(
         ks_client, service=service, interface="public", region=region,
         url=public_url)
@@ -428,7 +442,7 @@ def create_endpoint(ks_client, service_name=None, region=None,
     public_endpint = _create_endpoint(
         ks_client, service=service, interface="admin", region=region,
         url=admin_url)
-    
+
     return (True, public_endpint)
 
 def process_params(module):
@@ -484,7 +498,7 @@ def process_params(module):
                       domain_name=domain_name)
     elif (action == "create_service"):
         kwargs = dict(service_name=service_name, service_type=service_type,
-                      description=description)    
+                      description=description)
     elif (action == "create_endpoint"):
         kwargs = dict(service_name=service_name, region=region,
                       admin_url=admin_url, internal_url=internal_url,
@@ -529,14 +543,16 @@ def get_client(module):
     login_password = module.params.get("login_password")
     auth_url = module.params.get("endpoint")
     token = module.params.get("login_token")
+    insecure = module.params.get("insecure", True)
+    cacerts = module.params.get("cacerts")
 
     ks_client = _get_client(login_username=login_username,
                             login_project_name=login_project_name,
                             login_user_domain_name=login_user_domain_name,
                             login_project_domain_name=login_project_domain_name,
                             login_password=login_password,
-                            auth_url=auth_url,
-                            token=token)
+                            auth_url=auth_url, token=token,
+                            insecure=insecure, ca_cert=cacerts)
 
     return ks_client
 
@@ -570,6 +586,8 @@ def main():
         login_user_domain_name=dict(default=None),
         login_domain_name=dict(default=None),
         login_token=dict(default=None),
+        insecure=dict(default=True),
+        cacerts=dict(default=None),
 
         endpoint=dict(default=None),
         description=dict(default="Created by Ansible keystone_v3"),

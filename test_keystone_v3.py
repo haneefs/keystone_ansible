@@ -47,7 +47,7 @@ def test_process(module):
 
 
 def get_login_cred(module):
-
+    
     module.params["login_username"] = "admin1"
     module.params["login_project_name"] = "admin"
     module.params["login_user_domain_name"] = "Default"
@@ -56,9 +56,20 @@ def get_login_cred(module):
     module.params["endpoint"] = "http://localhost:35357/v3"
 
 
+def get_login_cred_for_ssl(module):
+    
+    module.params["login_username"] = "admin"
+    module.params["login_project_name"] = "admin"
+    module.params["login_user_domain_name"] = "Default"
+    module.params["login_project_domain_name"] = "Default"
+    module.params["login_password"] = "password"
+    module.params["endpoint"] = "https://localhost:35378/v3"
+    module.params["cacerts"] = "/tmp/a.cert"
+
+
 def get_token_cred(module):
-    module.params["auth_url"] = "http://localhost:35357/v3"
-    module.params["token"] = "ADMIN"
+    module.params["endpoint"] = "http://localhost:35357/v3"
+    module.params["login_token"] = "ADMIN"
 
 
 def test_find_domain(module):
@@ -295,7 +306,6 @@ if __name__ == '__main__':
         module = TestModule()
         get_login_cred(module)
         test_create_service(module)
-        
         
         module = TestModule()
         get_login_cred(module)
