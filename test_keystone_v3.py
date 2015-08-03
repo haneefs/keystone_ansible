@@ -38,17 +38,14 @@ class TestModule(object):
 
 
 def test_process(module):
-    import os
-
-    os.environ["no_proxy"] = "localhost"
 
     print "Testing %s" % module.params["action"]
     process_module_action(module)
 
 
 def get_login_cred(module):
-    
-    module.params["login_username"] = "admin1"
+
+    module.params["login_username"] = "admin"
     module.params["login_project_name"] = "admin"
     module.params["login_user_domain_name"] = "Default"
     module.params["login_project_domain_name"] = "Default"
@@ -246,7 +243,7 @@ def test_create_endpoint(module):
 if __name__ == '__main__':
 
     try:
-        
+
         module = TestModule()
         get_login_cred(module)
         test_find_domain(module)

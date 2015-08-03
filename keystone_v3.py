@@ -21,57 +21,58 @@ EXAMPLES = '''
 # Create a project using ssl endpoint and insecure mode
 - keystone_v3: action="create_project" project_name=demo
                description="Default Tenant" project_domain_name="Default"
-               login_token=Mytoken endpoint=https://keystone:353537/v3
+               login_token=Mytoken endpoint=https://keystone:35357/v3
                insecure=True
 
 # Create a project using ssl endpoint passing proper certs
 # /tmp/mycacert.crt should exist in target node
 - keystone_v3: action="create_project" project_name=demo
                description="Default Tenant" project_domain_name="Default"
-               login_token=Mytoken endpoint=https://keystone:353537/v3
-               cacerts="/tmp/mycacert.crt"
+               login_token=Mytoken endpoint=https://keystone:35357/v3
+               cacert="/tmp/mycacert.crt"
 
 # Create a project
 - keystone_v3: action="create_project" project_name=demo
                description="Default Tenant" project_domain_name="Default"
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Create a user
 - keystone_v3: action="create_user" user_name=demo
                description="Default User" user_domain_name="Default"
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Create a domain
 - keystone_v3: action="create_domain" domain_name=demo
                description="Default User"
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Create a role
 - keystone_v3: action="create_domain" domain_name=demo
                description="Default User"
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Grant  admin role to the john user in the demo tenant
 - keystone_v3: action="grant_project_role" project__name=demo
                role_name=admin user_name=john user_domain_name=Default
                project_domain_name=Default
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Grant  admin role to the john user in the domain John_Domain
 - keystone_v3: action="grant_domain_role" domain__name=John-Domain
                role_name=admin user_name=john user_domain_name=Default
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Create a service
 - keystone_v3: action="create_service" service_name=Keystone
                service_type=identity description=Identity
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 # Create a endpoint
-- keystone_v3: action="create_endpoint" service_name=Keystone
-               region=myregion public_endpoint=http://public_ep
-               internal_endpoint=http://internal_ep private_endpoint=http://private_ep
-               login_token=Mytoken endpoint=http://keystone:353537/v3
+- keystone_v3: action="create_endpoint" service_name=Keystone region=myregion
+               public_url=http://myservice:7777/v1
+               internal_url=http://myservice-internal:8888/v1
+               admin_url=http://myservice-admin:9999/v1
+               login_token=Mytoken endpoint=http://keystone:35357/v3
 
 '''
 
@@ -80,11 +81,12 @@ from keystoneclient.v3 import client as v3client
 from keystoneclient.auth.identity import v3
 from keystoneclient.auth import token_endpoint
 from keystoneclient import session
+from keystoneclient import exceptions
 
 
 def _get_client(auth_url=None, token=None, login_username=None, login_password=None, login_project_name=None,
                 login_project_domain_name=None, login_user_domain_name=None, login_domain_name=None,
-                insecure=True, ca_cert=None):
+                insecure=False, ca_cert=None):
     """Return a ks_client client object"""
 
     auth_plugin = None
@@ -95,8 +97,8 @@ def _get_client(auth_url=None, token=None, login_username=None, login_password=N
                                   project_name=login_project_name, project_domain_name=login_project_domain_name,
                                   user_domain_name=login_user_domain_name, domain_name=login_domain_name)
 
-    # Force validation if ca_cert is provided
-    verify = True if ca_cert  else not insecure
+    verify = not insecure
+    # if insecure = False, it will use cert from default locaiton if cacert is not specified
 
     auth_session = session.Session(
         auth=auth_plugin, verify=verify, cert=ca_cert)
@@ -164,6 +166,28 @@ def _delete_project(ks_client, project=None):
     ks_client.projects.delete(project=project)
 
 
+def _find_group(ks_client, domain_name=None, group_name=None):
+    domain = _find_domain(ks_client, domain_name=domain_name)
+
+    if domain:
+        groups = ks_client.groups.list(domain=domain, name=group_name)
+        if len(groups):
+            return groups[0]
+
+
+def _create_group(ks_client, group_name=None, domain_name=None,
+                    description=None):
+
+    domain = _find_domain(ks_client, domain_name)
+    return ks_client.groups.create(name=group_name,
+                                     description=description,
+                                     domain=domain)
+
+def _delete_groups(ks_client, group=None):
+    ks_client.groups.update(group=group, enabled=False)
+    ks_client.groups.delete(group=group)
+
+
 def _find_role(ks_client, role_name=None):
     roles = ks_client.roles.list(name=role_name)
     return roles[0] if len(roles) else None
@@ -206,6 +230,12 @@ def _create_endpoint(ks_client, service=None, url=None,
                     interface=None, region=None):
     return ks_client.endpoints.create(service=service, url=url,
                                      interface=interface, region=region)
+
+#Note though it is called as id, we normally use name for service provider
+def _find_serviceprovider(ks_client, service_provider_id=None):
+    #To Do
+    return None
+
 
 def find_domain(ks_client, domain_name=None):
     domain = _find_domain(ks_client, domain_name=domain_name)
@@ -270,6 +300,32 @@ def delete_user(ks_client, user_name=None, domain_name=None):
      # User with that name doesn't exist
     return (False, None)
 
+def find_group(ks_client, group_name=None, domain_name=None):
+    group = _find_group(ks_client, domain_name=domain_name, group_name=group_name)
+    result, group = (True, group) if group else (False, None)
+    return result, group
+
+def create_group(ks_client, group_name=None, domain_name=None, description=None):
+
+    group = _find_user(ks_client, group_name=group_name, domain_name=domain_name)
+
+    if group:
+        return (False,  group)
+
+    # User with that name doesn't exist
+    group = _create_user(ks_client, group_name=group_name,
+                        domain_name=domain_name, description=description)
+    return (True, group)
+
+def delete_group(ks_client, group_name=None, domain_name=None):
+    group = _find_group(ks_client, domain_name=domain_name, group_name=group_name)
+
+    if group:
+        _delete_user(ks_client, group=group)
+        return (True, group)
+
+     # Group with that name doesn't exist
+    return (False, None)
 
 def find_project(ks_client, project_name=None, domain_name=None):
     project = _find_project(
@@ -337,14 +393,38 @@ def delete_role(ks_client, role_name=None):
     return (False, None)
 
 
-def _grant_or_revoke_project_role(ks_client, role_name=None, user_name=None, project_name=None,
-                                  user_domain_name=None, project_domain_name=None, grant=True):
+def _find_project_role_assignment(ks_client, role_name=None, user_name=None, project_name=None,
+                                  user_domain_name=None, project_domain_name=None):
 
     role = _find_role(ks_client, role_name=role_name)
     user = _find_user(
         ks_client, user_name=user_name, domain_name=user_domain_name)
     project = _find_project(
         ks_client, project_name=project_name, domain_name=project_domain_name)
+
+    ret = False
+    if (user and role and project):
+        try:
+            ret = ks_client.roles.check(role=role, user=user, project=project)
+        except Exception as e:
+            if not isinstance(e, exceptions.NotFound):
+               raise
+
+    return (ret, role, user, project)
+
+
+def _grant_or_revoke_project_role(ks_client, role_name=None, user_name=None, project_name=None,
+                                  user_domain_name=None, project_domain_name=None, grant=True):
+
+    (assignment_status, role, user, project) = _find_project_role_assignment(ks_client, role_name=role_name,
+                                  user_name=user_name, project_name=project_name,
+                                  user_domain_name=user_domain_name, project_domain_name=project_domain_name)
+
+    if assignment_status and grant:
+        return (False, "Already assigned")
+
+    if not assignment_status and not grant:
+        return (False, "Already revoked")
 
     if (user and role and project):
         if (grant):
@@ -355,14 +435,35 @@ def _grant_or_revoke_project_role(ks_client, role_name=None, user_name=None, pro
 
     return (False, "Not able to find user/role/project with the given inputs")
 
-
-def _grant_or_revoke_domain_role(ks_client, role_name=None, user_name=None,
-                                 user_domain_name=None, domain_name=None, grant=True):
+def _find_domain_role_assignment(ks_client, role_name=None, user_name=None,
+                                 user_domain_name=None, domain_name=None):
 
     role = _find_role(ks_client, role_name=role_name)
     user = _find_user(
         ks_client, user_name=user_name, domain_name=user_domain_name)
     domain = _find_domain(ks_client,  domain_name=domain_name)
+
+    ret = False
+    if (user and role and domain):
+        try:
+            ret = ks_client.roles.check(role=role, user=user, domain=domain)
+        except Exception as e:
+            if not isinstance(e, exceptions.NotFound):
+               raise
+
+    return (ret, role, user, domain)
+
+def _grant_or_revoke_domain_role(ks_client, role_name=None, user_name=None,
+                                 user_domain_name=None, domain_name=None, grant=True):
+
+    (assignment_status, role, user, domain) = _find_domain_role_assignment(ks_client, role_name=role_name,
+                                  user_name=user_name, user_domain_name=user_domain_name, domain_name=domain_name)
+    
+    if assignment_status and grant:
+        return (False, "Already assigned")
+
+    if not assignment_status and not grant:
+        return (False, "Already revoked")
 
     if (user and role and domain):
         if (grant):
@@ -428,22 +529,31 @@ def create_endpoint(ks_client, service_name=None, region=None,
     if not service:
         raise Exception("Service with the name=%s doesn't exist" %(service_name))
 
-    # Here we are checking only public endpoint, that should be fine
-    endpoint = _find_endpoint(ks_client, service=service, interface="public")
+    # Here we are checking only admin endpoint, that should be fine
+    endpoint = _find_endpoint(ks_client, service=service, interface="admin")
     if endpoint:
         return (False, endpoint)
 
-    public_endpoint = _create_endpoint(
-        ks_client, service=service, interface="public", region=region,
-        url=public_url)
-    internal_endpoint = _create_endpoint(
+    if public_url:
+        _ = _create_endpoint(
+            ks_client, service=service, interface="public", region=region,
+            url=public_url)
+    _ = _create_endpoint(
         ks_client, service=service, interface="internal", region=region,
         url=internal_url)
-    public_endpint = _create_endpoint(
+    admin_endpoint = _create_endpoint(
         ks_client, service=service, interface="admin", region=region,
         url=admin_url)
 
-    return (True, public_endpint)
+    return True, admin_endpoint
+
+def create_serviceprovider():
+    #To do
+    return None
+
+def create_identityprovider():
+    #To do
+    return None
 
 def process_params(module):
 
@@ -530,7 +640,13 @@ dispatch_map = {
 
     "create_service": create_service,
     "create_endpoint": create_endpoint,
+    
+    "find_group": find_group,
+    "delete_group": delete_group,
+    "create_group": create_group,
 
+    "create_serviceprovider" : create_serviceprovider,
+    "create_identityprovider": create_identityprovider,
 }
 
 
@@ -586,8 +702,8 @@ def main():
         login_user_domain_name=dict(default=None),
         login_domain_name=dict(default=None),
         login_token=dict(default=None),
-        insecure=dict(default=True),
-        cacerts=dict(default=None),
+        insecure=dict(default=None),
+        cacert=dict(default=None),
 
         endpoint=dict(default=None),
         description=dict(default="Created by Ansible keystone_v3"),
@@ -599,6 +715,7 @@ def main():
         project_domain_name=dict(default=None),
         domain_name=dict(default=None),
         role_name=dict(default=None),
+        group_name=dict(default=None),
 
         service_name=dict(default=None),
         service_type=dict(default=None),

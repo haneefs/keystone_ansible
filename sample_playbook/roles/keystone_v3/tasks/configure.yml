@@ -1,0 +1,88 @@
+---
+
+- name: keystone_v3 | configure | Create couple of roles
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "create_role"
+    role_name: "{{ item }}"
+    description: "Bootstrap admin role  created via keystone deploy"
+  with_items:
+    - admin
+    - domain_admin
+    - domain_user
+
+ # Create a cloud_admin user in default domain 
+- name: keystone_v3 | configure | Create cloud_admin_user in default domain
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "create_user"
+    user_name: cloud_admin
+    user_domain_name: Default
+    description: "Bootstrap accounts created via keystone deploy"
+
+
+- name: keystone_v3 | configure | Create keystone project
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "create_project"
+    project_name: admin_project
+    project_domain_name: Default
+    description: "Bootstrap accounts created via keystone deploy"
+
+
+- name: keystone_v3 | configure | Grant admin Role to cloud_admin User on admin_project 
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "grant_project_role"
+    user_name: cloud_admin
+    project_name: admin_project
+    role_name: admin
+    user_domain_name:  Default
+    project_domain_name: Default
+
+# Grant domain roles so we can use domain scoped tokens
+- name: keystone_v3 | configure | Grant cloud_admin user in admin Role on default  domain
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "grant_domain_role"
+    user_name: cloud_admin
+    role_name: admin
+    user_domain_name: Default
+    domain_name: Default
+
+
+# Now we will use the user created aboue to create other entities instead of admin_token
+
+- name: keystone_v3 | configure | Create another keystone domain called AcmeDomain
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "create_domain"
+    domain_name: AcmeDomain
+    description: "Bootstrap accounts created via keystone deploy"
+
+- name: keystone_v3 | configure | Create Identity Service
+  keystone_v3:
+    endpoint: "{{ keystone_endpoint }}/v3"
+    login_token: "{{ keystone_admin_token }}"
+    action: "create_service"
+    service_type: "identity"
+    service_name: "keystone"
+    description: "Identity Service"
+
+- name: keystone_v3 | configure | Create Identity Endpoint
+  keystone_v3:
+    endpoint: "{{ keystone_endpoint }}/v3"
+    login_token: "{{ keystone_admin_token }}"
+    action: "create_endpoint"
+    service_name: "keystone"
+    region: region_a
+    admin_url: "{{ keystone_endpoint }}"
+    internal_url: "{{ keystone_endpoint }}"
+    public_url: "{{ keystone_endpoint }}"
+

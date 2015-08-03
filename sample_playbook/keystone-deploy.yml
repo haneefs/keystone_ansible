@@ -1,0 +1,8 @@
+---
+
+- hosts: all 
+  roles:
+    - keystone_v3
+  tasks:
+    - include: roles/keystone_v3/tasks/configure.yml
+

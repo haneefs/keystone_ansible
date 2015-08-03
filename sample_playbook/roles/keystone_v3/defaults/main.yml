@@ -1,0 +1,4 @@
+---
+
+keystone_admin_token: ADMIN
+keystone_endpoint: http://localhost:35357
