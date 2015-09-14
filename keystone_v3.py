@@ -555,6 +555,12 @@ def create_identityprovider():
     #To do
     return None
 
+def get_login_token(ks_client):
+    session = ks_client.session
+    auth_headers = session.get_auth_headers()
+    token = auth_headers.get('X-Auth-Token')
+    return (True, token)
+
 def process_params(module):
 
     user_name = module.params.get("user_name", None)
@@ -578,8 +584,10 @@ def process_params(module):
     public_url = module.params.get("public_url", None)
 
     action = module.params["action"]
-
-    if (action == "find_domain" or action == "delete_domain"):
+       
+    if (action == "token_get" ):
+       kwargs = dict()
+    elif (action == "find_domain" or action == "delete_domain"):
         kwargs = dict(domain_name=domain_name)
     elif (action == "create_domain"):
         kwargs = dict(domain_name=domain_name, description=description)
@@ -647,6 +655,8 @@ dispatch_map = {
 
     "create_serviceprovider" : create_serviceprovider,
     "create_identityprovider": create_identityprovider,
+    
+    "token_get": get_login_token,
 }
 
 
@@ -657,18 +667,20 @@ def get_client(module):
     login_user_domain_name = module.params.get("login_user_domain_name")
     login_project_domain_name = module.params.get("login_project_domain_name")
     login_password = module.params.get("login_password")
+    login_domain_name = module.params.get("login_domain_name")
     auth_url = module.params.get("endpoint")
     token = module.params.get("login_token")
-    insecure = module.params.get("insecure", True)
-    cacerts = module.params.get("cacerts")
+    insecure = module.params.get("insecure")
+    cacert = module.params.get("cacert")
 
     ks_client = _get_client(login_username=login_username,
                             login_project_name=login_project_name,
                             login_user_domain_name=login_user_domain_name,
                             login_project_domain_name=login_project_domain_name,
                             login_password=login_password,
+                            login_domain_name=login_domain_name,
                             auth_url=auth_url, token=token,
-                            insecure=insecure, ca_cert=cacerts)
+                            insecure=insecure, ca_cert=cacert)
 
     return ks_client
 
@@ -696,12 +708,12 @@ def main():
 
     argument_spec = dict(
         login_username=dict(default=None),
-        login_password=dict(default=None),
+        login_password=dict(default=None, no_log=True),
         login_project_name=dict(default=None),
         login_project_domain_name=dict(default=None),
         login_user_domain_name=dict(default=None),
         login_domain_name=dict(default=None),
-        login_token=dict(default=None),
+        login_token=dict(default=None, no_log=True),
         insecure=dict(default=None),
         cacert=dict(default=None),
 
@@ -709,7 +721,7 @@ def main():
         description=dict(default="Created by Ansible keystone_v3"),
         email=dict(default=None),
         user_name=dict(default=None),
-        user_password=dict(default=None),
+        user_password=dict(default=None, no_log=True),
         user_domain_name=dict(default=None),
         project_name=dict(default=None),
         project_domain_name=dict(default=None),

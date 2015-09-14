@@ -36,12 +36,10 @@ class TestModule(object):
                 continue
         self.fail_json(msg='Invalid unicode encoding encountered')
 
-
 def test_process(module):
 
     print "Testing %s" % module.params["action"]
     process_module_action(module)
-
 
 def get_login_cred(module):
 
@@ -67,6 +65,17 @@ def get_login_cred_for_ssl(module):
 def get_token_cred(module):
     module.params["endpoint"] = "http://localhost:35357/v3"
     module.params["login_token"] = "ADMIN"
+
+def test_get_domain_scoped_token(module):
+    
+    module.params["login_username"] = "admin"    
+    module.params["login_user_domain_name"] = "Default"
+    module.params["login_domain_name"] = "Default"
+    module.params["login_password"] = "password"
+    module.params["endpoint"] = "http://localhost:35357/v3"
+    module.params["action"] = "token_get"
+
+    test_process(module)
 
 
 def test_find_domain(module):
@@ -245,6 +254,9 @@ if __name__ == '__main__':
     try:
 
         module = TestModule()
+        test_get_domain_scoped_token(module)
+
+        module = TestModule()
         get_login_cred(module)
         test_find_domain(module)
 
@@ -310,3 +322,4 @@ if __name__ == '__main__':
 
     except Exception as e:
         print e
+    

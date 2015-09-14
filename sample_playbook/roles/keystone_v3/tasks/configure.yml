@@ -11,6 +11,7 @@
     - admin
     - domain_admin
     - domain_user
+    - cloud_admin
 
  # Create a cloud_admin user in default domain 
 - name: keystone_v3 | configure | Create cloud_admin_user in default domain
@@ -19,10 +20,11 @@
     endpoint: "{{ keystone_endpoint }}/v3"
     action: "create_user"
     user_name: cloud_admin
+    user_password: "password"
     user_domain_name: Default
     description: "Bootstrap accounts created via keystone deploy"
 
-
+    
 - name: keystone_v3 | configure | Create keystone project
   keystone_v3:
     login_token: "{{ keystone_admin_token }}"
@@ -86,3 +88,24 @@
     internal_url: "{{ keystone_endpoint }}"
     public_url: "{{ keystone_endpoint }}"
 
+
+- name: keystone_v3 | configure | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ keystone_endpoint }}/v3"
+    login_username: "admin"
+    login_password: "password"
+    login_user_domain_name: "Default"
+    login_domain_name: "Default"
+    action: "token_get"    
+  register: domain_scoped_token
+
+- name: keystone_v3  | configure | print the token
+  debug: var=domain_scoped_token
+
+- name: keystone_v3 | configure | Create new domain using domain scoped token got before
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "create_domain"
+    domain_name: AcmeDomain_1
+    description: "Bootstrap accounts created via keystone deploy"
