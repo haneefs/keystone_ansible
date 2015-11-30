@@ -90,6 +90,9 @@ def _get_client(auth_url=None, token=None, login_username=None, login_password=N
     """Return a ks_client client object"""
 
     auth_plugin = None
+
+    if login_domain_name and login_project_name:
+        raise Exception("Token can be scoped either to project or domain. Use either domain or project")
     if token:
         auth_plugin = token_endpoint.Token(endpoint=auth_url, token=token)
     else:
@@ -137,11 +140,12 @@ def _create_user(ks_client, user_name=None, user_password=None, domain_name=None
                                   description=description,
                                   email=email, domain=domain)
 
-
 def _delete_user(ks_client, user=None):
     ks_client.users.update(user=user, enabled=False)
     ks_client.users.delete(user=user)
 
+def _update_user(ks_client, user=None, password=None):
+    ks_client.users.update(user=user, password=password)
 
 def _find_project(ks_client, domain_name=None, project_name=None):
     domain = _find_domain(ks_client, domain_name=domain_name)
@@ -159,7 +163,6 @@ def _create_project(ks_client, project_name=None, domain_name=None,
     return ks_client.projects.create(name=project_name,
                                      description=description,
                                      domain=domain)
-
 
 def _delete_project(ks_client, project=None):
     ks_client.projects.update(project=project, enabled=False)
@@ -231,11 +234,10 @@ def _create_endpoint(ks_client, service=None, url=None,
     return ks_client.endpoints.create(service=service, url=url,
                                      interface=interface, region=region)
 
-#Note though it is called as id, we normally use name for service provider
-def _find_serviceprovider(ks_client, service_provider_id=None):
-    #To Do
-    return None
-
+def _update_endpoint(ks_client, endpoint=None, url=None,
+                    interface=None, region=None):
+    return ks_client.endpoints.update(endpoint=endpoint, url=url,
+                                     interface=interface, region=region)
 
 def find_domain(ks_client, domain_name=None):
     domain = _find_domain(ks_client, domain_name=domain_name)
@@ -296,7 +298,16 @@ def delete_user(ks_client, user_name=None, domain_name=None):
     if user:
         _delete_user(ks_client, user=user)
         return (True, user)
+     # User with that name doesn't exist
+    return (False, None)
 
+def update_user(ks_client, user_name=None, domain_name=None, user_password=None):
+
+    user = _find_user(ks_client, domain_name=domain_name, user_name=user_name)
+
+    if user:
+        _update_user(ks_client, user=user, password=user_password)
+        return (True, user)
      # User with that name doesn't exist
     return (False, None)
 
@@ -458,7 +469,7 @@ def _grant_or_revoke_domain_role(ks_client, role_name=None, user_name=None,
 
     (assignment_status, role, user, domain) = _find_domain_role_assignment(ks_client, role_name=role_name,
                                   user_name=user_name, user_domain_name=user_domain_name, domain_name=domain_name)
-    
+
     if assignment_status and grant:
         return (False, "Already assigned")
 
@@ -529,31 +540,60 @@ def create_endpoint(ks_client, service_name=None, region=None,
     if not service:
         raise Exception("Service with the name=%s doesn't exist" %(service_name))
 
-    # Here we are checking only admin endpoint, that should be fine
-    endpoint = _find_endpoint(ks_client, service=service, interface="admin")
-    if endpoint:
-        return (False, endpoint)
+    public_endpoint = _find_endpoint(ks_client, service=service, interface="public")
+    admin_endpoint  =  _find_endpoint(ks_client, service=service, interface="admin")
+    internal_endpoint = _find_endpoint(ks_client, service=service, interface="internal")
+
+    # We need a update here if the endpoints are already there
+    if (public_endpoint or admin_endpoint or internal_endpoint):
+        return update_endpoint(ks_client, region=region,
+                   admin_url=admin_url, internal_url=internal_url,
+                   public_url=public_url, admin_endpoint=admin_endpoint,
+                   internal_endpoint=internal_endpoint, public_endpoint=public_endpoint)
 
     if public_url:
-        _ = _create_endpoint(
-            ks_client, service=service, interface="public", region=region,
-            url=public_url)
-    _ = _create_endpoint(
-        ks_client, service=service, interface="internal", region=region,
-        url=internal_url)
-    admin_endpoint = _create_endpoint(
-        ks_client, service=service, interface="admin", region=region,
-        url=admin_url)
+            _ = _create_endpoint(ks_client, service=service, 
+                                 interface="public", region=region,
+                                 url=public_url)
+    if admin_url:
+            _ = _create_endpoint(ks_client, service=service, 
+                                 interface="admin", region=region,
+                                 url=admin_url)
+    if internal_url:
+            _ = _create_endpoint(ks_client, service=service, 
+                                 interface="internal", region=region,
+                                 url=internal_url)
 
     return True, admin_endpoint
 
-def create_serviceprovider():
-    #To do
-    return None
+def update_endpoint(ks_client, region=None,
+                   admin_url=None, internal_url=None,
+                   public_url=None, admin_endpoint=None,
+                   internal_endpoint=None, public_endpoint=None):
 
-def create_identityprovider():
-    #To do
-    return None
+    changed = False
+    if public_url and public_endpoint:
+        if public_endpoint.url != public_url:
+            _ = _update_endpoint(
+            ks_client, endpoint=public_endpoint, interface="public", region=region,
+            url=public_url)
+            changed = True
+
+    if admin_url and admin_endpoint:
+        if admin_endpoint.url != admin_url:
+            _ = _update_endpoint(
+            ks_client, endpoint=admin_endpoint, interface="admin", region=region,
+            url=admin_url)
+            changed = True
+            
+    if internal_url and internal_endpoint:
+        if internal_endpoint.url != internal_url:
+            _ = _update_endpoint(
+            ks_client, endpoint=internal_endpoint, interface="internal", region=region,
+            url=internal_url)
+            changed = True
+
+    return changed, admin_endpoint
 
 def get_login_token(ks_client):
     session = ks_client.session
@@ -621,7 +661,9 @@ def process_params(module):
         kwargs = dict(service_name=service_name, region=region,
                       admin_url=admin_url, internal_url=internal_url,
                       public_url=public_url)
-
+    elif (action == "reset_password_by_admin"):
+         kwargs = dict(domain_name=user_domain_name, user_name=user_name,
+                       user_password=user_password)
     return kwargs
 
 dispatch_map = {
@@ -653,10 +695,8 @@ dispatch_map = {
     "delete_group": delete_group,
     "create_group": create_group,
 
-    "create_serviceprovider" : create_serviceprovider,
-    "create_identityprovider": create_identityprovider,
-    
     "token_get": get_login_token,
+    "reset_password_by_admin": update_user
 }
 
 
@@ -698,7 +738,9 @@ def process_module_action(module):
         module.fail_json(msg="%s, failed" % e)
     else:
         status, resource_data = result
-        data = dict(changed=status, result=str(resource_data))
+        if hasattr(resource_data, '_info'):
+            resource_data = resource_data._info
+        data = dict(changed=status, result=resource_data)
         module.exit_json(**data)
 
 

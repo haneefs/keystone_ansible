@@ -99,9 +99,6 @@
     action: "token_get"    
   register: domain_scoped_token
 
-- name: keystone_v3  | configure | print the token
-  debug: var=domain_scoped_token
-
 - name: keystone_v3 | configure | Create new domain using domain scoped token got before
   keystone_v3:
     login_token: "{{ domain_scoped_token.result }}"
@@ -109,3 +106,59 @@
     action: "create_domain"
     domain_name: AcmeDomain_1
     description: "Bootstrap accounts created via keystone deploy"
+    
+- name: keystone_v3 | configure | Find the domain we created now
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "find_domain"
+    domain_name: AcmeDomain_1
+  register: domain_info
+  
+  
+- name: keystone_v3 | configure | Display domain
+  debug: var=domain_info
+  
+ # Create a demo user default domain 
+- name: keystone_v3 | configure | Create a demo user in default domain
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "create_user"
+    user_name: demo
+    user_password: "demo"
+    user_domain_name: Default
+    description: "Bootstrap accounts created via keystone deploy" 
+ 
+ 
+ # Update the demo user's default password
+- name: keystone_v3 | configure | Update  demo user's pwd
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "reset_password_by_admin"
+    user_name: demo
+    user_password: "demo1"
+    user_domain_name: Default
+
+# Grant domain roles so we can use domain scoped tokens
+- name: keystone_v3 | configure | Grant cloud_admin user in admin Role on default  domain
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_endpoint }}/v3"
+    action: "grant_domain_role"
+    user_name: demo
+    role_name: admin
+    user_domain_name: Default
+    domain_name: Default
+
+ 
+- name: keystone_v3 | configure | Get a domain scoped token for demo user using updated password
+  keystone_v3:
+    endpoint: "{{ keystone_endpoint }}/v3"
+    login_username: "demo"
+    login_password: "demo1"
+    login_user_domain_name: "Default"
+    login_domain_name: "Default"
+    action: "token_get"    
+  register: domain_scoped_token

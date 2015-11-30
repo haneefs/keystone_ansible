@@ -48,7 +48,7 @@ def get_login_cred(module):
     module.params["login_user_domain_name"] = "Default"
     module.params["login_project_domain_name"] = "Default"
     module.params["login_password"] = "password"
-    module.params["endpoint"] = "http://localhost:35357/v3"
+    module.params["endpoint"] = "http://192.168.111.222:35357/v3"
 
 
 def get_login_cred_for_ssl(module):
@@ -72,7 +72,7 @@ def test_get_domain_scoped_token(module):
     module.params["login_user_domain_name"] = "Default"
     module.params["login_domain_name"] = "Default"
     module.params["login_password"] = "password"
-    module.params["endpoint"] = "http://localhost:35357/v3"
+    module.params["endpoint"] = "http://192.168.111.222:35357/v3"
     module.params["action"] = "token_get"
 
     test_process(module)
@@ -80,9 +80,8 @@ def test_get_domain_scoped_token(module):
 
 def test_find_domain(module):
     module.params["action"] = "find_domain"
-    module.params["domain_name"] = "Invalid_domain"
-    test_process(module)
-
+    #module.params["domain_name"] = "Invalid_domain"
+    #test_process(module)
     module.params["domain_name"] = "Default"
     test_process(module)
 
@@ -254,9 +253,6 @@ if __name__ == '__main__':
     try:
 
         module = TestModule()
-        test_get_domain_scoped_token(module)
-
-        module = TestModule()
         get_login_cred(module)
         test_find_domain(module)
 
@@ -264,6 +260,7 @@ if __name__ == '__main__':
         get_login_cred(module)
         test_create_domain(module)
 
+        '''
         module = TestModule()
         get_login_cred(module)
         test_delete_domain(module)
@@ -319,6 +316,10 @@ if __name__ == '__main__':
         module = TestModule()
         get_login_cred(module)
         test_create_endpoint(module)
+        
+        module = TestModule()
+        test_get_domain_scoped_token(module)
+        '''
 
     except Exception as e:
         print e
