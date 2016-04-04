@@ -100,11 +100,14 @@ def _get_client(auth_url=None, token=None, login_username=None, login_password=N
                                   project_name=login_project_name, project_domain_name=login_project_domain_name,
                                   user_domain_name=login_user_domain_name, domain_name=login_domain_name)
 
-    verify = not insecure
-    # if insecure = False, it will use cert from default locaiton if cacert is not specified
+    verify = False
+    if not insecure:
+        # Caller wants cert verification
+        verify = ca_cert or True
 
+    # Client cert is not supported now.  Will add it later with cert=client_cert option
     auth_session = session.Session(
-        auth=auth_plugin, verify=verify, cert=ca_cert)
+        auth=auth_plugin, verify=verify)
     return v3client.Client(auth_url=auth_url, session=auth_session)
 
 
@@ -186,7 +189,7 @@ def _create_group(ks_client, group_name=None, domain_name=None,
                                      description=description,
                                      domain=domain)
 
-def _delete_groups(ks_client, group=None):
+def _delete_group(ks_client, group=None):
     ks_client.groups.update(group=group, enabled=False)
     ks_client.groups.delete(group=group)
 
@@ -204,12 +207,16 @@ def _create_role(ks_client, role_name=None, description=None):
     return ks_client.roles.create(name=role_name, description=description)
 
 
-def _grant_roles(ks_client, role=None, project=None, user=None, domain=None):
-    return ks_client.roles.grant(role=role, project=project, user=user, domain=domain)
+def _grant_roles(ks_client, role=None, project=None, user=None,
+                 group=None, domain=None):
+    return ks_client.roles.grant(role=role, project=project, user=user,
+                                 group=group, domain=domain)
 
 
-def _revoke_roles(ks_client, role=None, project=None, user=None, domain=None):
-    return ks_client.roles.revoke(role=role, project=project, user=user, domain=domain)
+def _revoke_roles(ks_client, role=None, project=None,
+                  user=None, group=None, domain=None):
+    return ks_client.roles.revoke(role=role, project=project,
+                                  user=user, group=group, domain=domain)
 
 def _find_service(ks_client, service_name=None, service_type=None):
     services  =  ks_client.services.list(name=service_name,
@@ -222,7 +229,10 @@ def _create_service(ks_client, service_name=None, service_type=None,
                                      description=description)
 
 def _delete_service(ks_client, service_name=None):
-    return ks_client.services.delete(name=service_name)
+    service = ks_client.services.get(service_name)
+    if service:
+        ks_client.services.delete(service)
+    return service_name
 
 def _find_endpoint(ks_client, service=None, interface=None):
 
@@ -318,13 +328,13 @@ def find_group(ks_client, group_name=None, domain_name=None):
 
 def create_group(ks_client, group_name=None, domain_name=None, description=None):
 
-    group = _find_user(ks_client, group_name=group_name, domain_name=domain_name)
+    group = _find_group(ks_client, group_name=group_name, domain_name=domain_name)
 
     if group:
         return (False,  group)
 
     # User with that name doesn't exist
-    group = _create_user(ks_client, group_name=group_name,
+    group = _create_group(ks_client, group_name=group_name,
                         domain_name=domain_name, description=description)
     return (True, group)
 
@@ -332,7 +342,7 @@ def delete_group(ks_client, group_name=None, domain_name=None):
     group = _find_group(ks_client, domain_name=domain_name, group_name=group_name)
 
     if group:
-        _delete_user(ks_client, group=group)
+        _delete_group(ks_client, group=group)
         return (True, group)
 
      # Group with that name doesn't exist
@@ -404,31 +414,40 @@ def delete_role(ks_client, role_name=None):
     return (False, None)
 
 
-def _find_project_role_assignment(ks_client, role_name=None, user_name=None, project_name=None,
+def _find_project_role_assignment(ks_client, role_name=None, user_name=None,
+                                  group_name=None, project_name=None,
+                                  group_domain_name=None,
                                   user_domain_name=None, project_domain_name=None):
 
     role = _find_role(ks_client, role_name=role_name)
-    user = _find_user(
-        ks_client, user_name=user_name, domain_name=user_domain_name)
+    user = group = None
+    if user_name:
+        user = _find_user(
+            ks_client, user_name=user_name, domain_name=user_domain_name)
+    elif group_name:
+        group = _find_group(ks_client, group_name=group_name, domain_name=group_domain_name)
     project = _find_project(
         ks_client, project_name=project_name, domain_name=project_domain_name)
 
     ret = False
-    if (user and role and project):
+    if (user or group and role and project):
         try:
-            ret = ks_client.roles.check(role=role, user=user, project=project)
+            ret = ks_client.roles.check(role=role, user=user, group=group, project=project)
         except Exception as e:
             if not isinstance(e, exceptions.NotFound):
                raise
 
-    return (ret, role, user, project)
+    return (ret, role, user, group, project)
 
 
-def _grant_or_revoke_project_role(ks_client, role_name=None, user_name=None, project_name=None,
-                                  user_domain_name=None, project_domain_name=None, grant=True):
+def _grant_or_revoke_project_role(ks_client, role_name=None, user_name=None, group_name=None,
+                                  group_domain_name=None,
+                                  project_name=None, user_domain_name=None,
+                                  project_domain_name=None, grant=True):
 
-    (assignment_status, role, user, project) = _find_project_role_assignment(ks_client, role_name=role_name,
-                                  user_name=user_name, project_name=project_name,
+    (assignment_status, role, user, group, project) = _find_project_role_assignment(ks_client, role_name=role_name,
+                                  user_name=user_name, group_name=group_name,
+                                  group_domain_name=group_domain_name, project_name=project_name,
                                   user_domain_name=user_domain_name, project_domain_name=project_domain_name)
 
     if assignment_status and grant:
@@ -437,11 +456,11 @@ def _grant_or_revoke_project_role(ks_client, role_name=None, user_name=None, pro
     if not assignment_status and not grant:
         return (False, "Already revoked")
 
-    if (user and role and project):
+    if (user or group and role and project):
         if (grant):
-            _grant_roles(ks_client, role=role, project=project, user=user)
+            _grant_roles(ks_client, role=role, project=project, user=user, group=group)
         else:
-            _revoke_roles(ks_client, role=role, project=project, user=user)
+            _revoke_roles(ks_client, role=role, project=project, user=user, group=group)
         return (True, "OK")
 
     return (False, "Not able to find user/role/project with the given inputs")
@@ -494,12 +513,31 @@ def grant_project_role(ks_client, role_name=None, user_name=None, project_name=N
                                          project_domain_name=project_domain_name, grant=True)
 
 
+def grant_project_role_on_group(ks_client, role_name=None, group_name=None, group_domain_name=None,
+                                project_name=None, project_domain_name=None):
+
+    return _grant_or_revoke_project_role(ks_client, role_name=role_name, group_name=group_name,
+                                         group_domain_name=group_domain_name,
+                                         project_name=project_name,
+                                         project_domain_name=project_domain_name,
+                                         grant=True)
+
+
 def revoke_project_role(ks_client, role_name=None, user_name=None, project_name=None,
                         user_domain_name=None, project_domain_name=None):
 
     return _grant_or_revoke_project_role(ks_client, role_name=role_name, user_name=user_name,
                                          project_name=project_name, user_domain_name=user_domain_name,
                                          project_domain_name=project_domain_name, grant=False)
+
+def revoke_project_role_on_group(ks_client, role_name=None, group_name=None,
+                                 group_domain_name=None,
+                                 project_name=None, project_domain_name=None):
+
+    return _grant_or_revoke_project_role(ks_client, role_name=role_name, group_name=group_name,
+                                         group_domain_name=group_domain_name, project_name=project_name,
+                                         project_domain_name=project_domain_name,
+                                         grant=False)
 
 
 def grant_domain_role(ks_client, role_name=None, user_name=None, domain_name=None,
@@ -529,6 +567,17 @@ def create_service(ks_client, service_name=None, service_type=None,
     service = _create_service(
         ks_client, service_name=service_name, service_type=service_type,
         description=description)
+    return (True, service)
+
+def delete_service(ks_client, service_name=None, service_type=None):
+
+    service = _find_service(ks_client, service_name=service_name,
+                            service_type=service_type)
+
+    if not service:
+        return (False,  service)
+
+    service = _delete_service(ks_client, service)
     return (True, service)
 
 def create_endpoint(ks_client, service_name=None, region=None,
@@ -604,10 +653,12 @@ def get_login_token(ks_client):
 def process_params(module):
 
     user_name = module.params.get("user_name", None)
+    group_name = module.params.get("group_name", None)
     user_password = module.params.get("user_password", None)
     email = module.params.get("email", None)
     description = module.params.get("description", None)
     user_domain_name = module.params.get("user_domain_name", None)
+    group_domain_name = module.params.get("group_domain_name", None)
 
     domain_name = module.params.get("domain_name", None)
 
@@ -650,6 +701,9 @@ def process_params(module):
         kwargs = dict(role_name=role_name, user_name=user_name,
                       user_domain_name=user_domain_name, project_name=project_name,
                       project_domain_name=project_domain_name)
+    elif (action in ["grant_project_role_on_group", "revoke_project_role_on_group"]):
+        kwargs = dict(role_name=role_name, group_name=group_name, group_domain_name=group_domain_name,
+                      project_name=project_name, project_domain_name=project_domain_name)
     elif (action == "grant_domain_role" or action == "revoke_domain_role"):
         kwargs = dict(role_name=role_name, user_name=user_name,
                       user_domain_name=user_domain_name,
@@ -657,6 +711,8 @@ def process_params(module):
     elif (action == "create_service"):
         kwargs = dict(service_name=service_name, service_type=service_type,
                       description=description)
+    elif (action == "delete_service"):
+        kwargs = dict(service_name=service_name, service_type=service_type)
     elif (action == "create_endpoint"):
         kwargs = dict(service_name=service_name, region=region,
                       admin_url=admin_url, internal_url=internal_url,
@@ -664,6 +720,12 @@ def process_params(module):
     elif (action == "reset_password_by_admin"):
          kwargs = dict(domain_name=user_domain_name, user_name=user_name,
                        user_password=user_password)
+    elif (action == "create_group"):
+        kwargs = dict(group_name=group_name, domain_name=domain_name,
+                      description=description)
+    elif (action == "find_group" or action == "delete_group"):
+        kwargs = dict(group_name=group_name, domain_name=domain_name)
+
     return kwargs
 
 dispatch_map = {
@@ -685,12 +747,15 @@ dispatch_map = {
 
     "grant_project_role": grant_project_role,
     "revoke_project_role": revoke_project_role,
+    "grant_project_role_on_group": grant_project_role_on_group,
+    "revoke_project_role_on_group": revoke_project_role_on_group,
     "grant_domain_role": grant_domain_role,
     "revoke_domain_role": revoke_domain_role,
 
     "create_service": create_service,
+    "delete_service": delete_service,
     "create_endpoint": create_endpoint,
-    
+
     "find_group": find_group,
     "delete_group": delete_group,
     "create_group": create_group,
@@ -770,6 +835,7 @@ def main():
         domain_name=dict(default=None),
         role_name=dict(default=None),
         group_name=dict(default=None),
+        group_domain_name=dict(default=None),
 
         service_name=dict(default=None),
         service_type=dict(default=None),
